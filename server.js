@@ -1,5 +1,6 @@
 require("dotenv").config();
 const express = require("express");
+const cors = require("cors"); // ✅ add cors
 const connectDB = require("./config/db.js");
 
 const authRoutes = require("./routes/authRoutes.js");
@@ -9,6 +10,15 @@ const deviceRoutes = require("./routes/deviceRoutes.js");
 
 const app = express();
 connectDB();
+
+// ✅ Allow all origins
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "PATCH", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 
 app.use(express.json());
 
