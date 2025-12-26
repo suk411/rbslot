@@ -8,11 +8,11 @@ exports.createTransaction = async (req, res) => {
   try {
     const { amount, type, meta } = req.body;
     const actor = req.user; // from JWT
+
     if (!actor || !actor.userId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // Validate
     if (typeof amount !== "number" || amount <= 0) {
       return res
         .status(400)
@@ -26,30 +26,25 @@ exports.createTransaction = async (req, res) => {
 
     await session.startTransaction();
 
-    // Find user
     const user = await User.findOne({ userId: actor.userId }).session(session);
     if (!user) {
       await session.abortTransaction();
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Determine delta for balance
     const delta = type === "credit" ? amount : -amount;
-
-    // Prevent negative balances on debit
     if (type === "debit" && user.balance + delta < 0) {
       await session.abortTransaction();
       return res.status(400).json({ error: "Insufficient balance" });
     }
 
-    // Append transaction
     const tx = await Transaction.create(
       [
         {
           userId: user.userId,
           amount,
           type,
-          status: "completed",
+          status: "pending", // start as pending
           meta,
         },
       ],
@@ -57,21 +52,10 @@ exports.createTransaction = async (req, res) => {
     );
     const transaction = tx[0];
 
-    // Atomic balance update
-    user.balance += delta;
-    await user.save({ session });
-
     await session.commitTransaction();
     session.endSession();
 
-    return res.status(201).json({
-      orderId: transaction.orderId,
-      userId: user.userId,
-      type,
-      amount,
-      balance: user.balance,
-      status: transaction.status,
-    });
+    return res.status(201).json(transaction);
   } catch (err) {
     await session.abortTransaction().catch(() => {});
     session.endSession();
@@ -79,7 +63,7 @@ exports.createTransaction = async (req, res) => {
   }
 };
 
-// Admin: update transaction status (append-only audit, does not alter amount)
+// Admin: update transaction status
 exports.updateTransactionStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -92,17 +76,23 @@ exports.updateTransactionStatus = async (req, res) => {
     const tx = await Transaction.findOne({ orderId });
     if (!tx) return res.status(404).json({ error: "Transaction not found" });
 
-    // Only update status; amount/history remain immutable
     tx.status = status;
     await tx.save();
 
-    return res.json({
-      orderId: tx.orderId,
-      userId: tx.userId,
-      type: tx.type,
-      amount: tx.amount,
-      status: tx.status,
+    return res.json(tx);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// Get all transactions for logged-in user
+exports.getUserTransactions = async (req, res) => {
+  try {
+    const actor = req.user;
+    const transactions = await Transaction.find({ userId: actor.userId }).sort({
+      createdAt: -1,
     });
+    return res.json(transactions);
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
