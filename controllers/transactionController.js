@@ -85,14 +85,32 @@ exports.updateTransactionStatus = async (req, res) => {
   }
 };
 
-// Get all transactions for logged-in user
+// Get paginated transactions for logged-in user
 exports.getUserTransactions = async (req, res) => {
   try {
     const actor = req.user;
-    const transactions = await Transaction.find({ userId: actor.userId }).sort({
-      createdAt: -1,
+
+    // page query param, default = 1
+    const page = parseInt(req.query.page) || 1;
+    const limit = 10; // 10 records per page
+    const skip = (page - 1) * limit;
+
+    // Fetch transactions
+    const transactions = await Transaction.find({ userId: actor.userId })
+      .sort({ createdAt: -1 }) // latest first
+      .skip(skip)
+      .limit(limit);
+
+    // Count total for pagination info
+    const total = await Transaction.countDocuments({ userId: actor.userId });
+    const totalPages = Math.ceil(total / limit);
+
+    return res.json({
+      page,
+      totalPages,
+      totalRecords: total,
+      transactions,
     });
-    return res.json(transactions);
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
