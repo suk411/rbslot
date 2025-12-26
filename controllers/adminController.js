@@ -80,3 +80,44 @@ exports.listDevices = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+
+
+// Find linked accounts by device logs
+exports.findLinkedAccounts = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Get all device logs for this user
+    const userDevices = await DeviceLog.find({ userId });
+
+    if (!userDevices.length) {
+      return res.json({ userId, linkedAccounts: [] });
+    }
+
+    // Collect identifiers used by this user
+    const deviceIds = userDevices.map(d => d.deviceId).filter(Boolean);
+    const ips = userDevices.map(d => d.ip).filter(Boolean);
+    const adIds = userDevices.map(d => d.adId).filter(Boolean);
+
+    // Find other users who share any of these identifiers
+    const linkedLogs = await DeviceLog.find({
+      $or: [
+        { deviceId: { $in: deviceIds } },
+        { ip: { $in: ips } },
+        { adId: { $in: adIds } }
+      ],
+      userId: { $ne: userId } // exclude the original user
+    });
+
+    // Get distinct userIds
+    const linkedUserIds = [...new Set(linkedLogs.map(d => d.userId))];
+
+    // Fetch user details
+    const linkedUsers = await User.find({ userId: { $in: linkedUserIds } });
+
+    res.json({ userId, linkedAccounts: linkedUsers });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
