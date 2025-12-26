@@ -63,23 +63,69 @@ exports.createTransaction = async (req, res) => {
   }
 };
 
-// Admin: update transaction status
+// Admin: approve or reject transaction
 exports.updateTransactionStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
     const { status } = req.body;
 
-    if (!["pending", "completed", "failed"].includes(status)) {
-      return res.status(400).json({ error: "Invalid status" });
+    if (!["completed", "failed"].includes(status)) {
+      return res
+        .status(400)
+        .json({ error: "Status must be 'completed' or 'failed'" });
     }
 
     const tx = await Transaction.findOne({ orderId });
     if (!tx) return res.status(404).json({ error: "Transaction not found" });
 
-    tx.status = status;
-    await tx.save();
+    // If already finalized, block re‑approval
+    if (tx.status !== "pending") {
+      return res.status(400).json({ error: "Transaction already finalized" });
+    }
 
-    return res.json(tx);
+    // Approve: update user balance atomically
+    if (status === "completed") {
+      const session = await mongoose.startSession();
+      await session.startTransaction();
+
+      try {
+        const user = await User.findOne({ userId: tx.userId }).session(session);
+        if (!user) {
+          await session.abortTransaction();
+          return res.status(404).json({ error: "User not found" });
+        }
+
+        const delta = tx.type === "credit" ? tx.amount : -tx.amount;
+        if (tx.type === "debit" && user.balance + delta < 0) {
+          await session.abortTransaction();
+          return res
+            .status(400)
+            .json({ error: "Insufficient balance for debit" });
+        }
+
+        user.balance += delta;
+        await user.save({ session });
+
+        tx.status = "completed";
+        await tx.save({ session });
+
+        await session.commitTransaction();
+        session.endSession();
+
+        return res.json(tx);
+      } catch (err) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(500).json({ error: err.message });
+      }
+    }
+
+    // Reject: just mark as failed, no balance change
+    if (status === "failed") {
+      tx.status = "failed";
+      await tx.save();
+      return res.json(tx);
+    }
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
