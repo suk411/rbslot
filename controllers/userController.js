@@ -45,8 +45,7 @@ exports.getUserBalance = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
-
-// Get balance for logged-in user (via JWT)
+// ✅ NEW: Get balance for logged-in user (via JWT)
 exports.getMyBalance = async (req, res) => {
   try {
     const actor = req.user; // decoded from JWT by protect middleware
