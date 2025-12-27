@@ -45,3 +45,20 @@ exports.getUserBalance = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
+
+// Get balance for logged-in user (via JWT)
+exports.getMyBalance = async (req, res) => {
+  try {
+    const actor = req.user; // decoded from JWT by protect middleware
+    if (!actor || !actor.userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const user = await User.findOne({ userId: actor.userId });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    return res.json({ userId: user.userId, balance: user.balance });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
