@@ -7,6 +7,22 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true, select: false },
   role: { type: String, enum: ["user", "admin"], default: "user", index: true },
   balance: { type: Number, default: 0, required: true }, // stored in paisa
+  bankAccounts: [
+    {
+      holderName: { type: String, required: true },
+      accountNumber: { type: String, required: true },
+      ifsc: {
+        type: String,
+        required: true,
+        validate: {
+          validator: (v) => v.length === 11,
+          message: "IFSC must be exactly 11 characters long",
+        },
+      },
+      bankName: { type: String, required: true },
+    },
+  ],
+
   createdAt: { type: Date, default: Date.now },
 });
 

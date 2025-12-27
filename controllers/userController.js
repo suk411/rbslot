@@ -61,3 +61,50 @@ exports.getMyBalance = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
+// Add a new bank account for logged-in user
+exports.addBankAccount = async (req, res) => {
+  try {
+    const actor = req.user;
+    const { holderName, accountNumber, ifsc, bankName } = req.body;
+
+    if (!actor || !actor.userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    if (!holderName || !accountNumber || !ifsc || !bankName) {
+      return res.status(400).json({ error: "All fields are required" });
+    }
+    if (ifsc.length !== 11) {
+      return res
+        .status(400)
+        .json({ error: "IFSC must be exactly 11 characters long" });
+    }
+
+    const user = await User.findOne({ userId: actor.userId });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    user.bankAccounts.push({ holderName, accountNumber, ifsc, bankName });
+    await user.save();
+
+    return res.status(201).json(user.bankAccounts);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// Get all bank accounts for logged-in user
+exports.getMyBankAccounts = async (req, res) => {
+  try {
+    const actor = req.user;
+    if (!actor || !actor.userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const user = await User.findOne({ userId: actor.userId });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    return res.json(user.bankAccounts);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};

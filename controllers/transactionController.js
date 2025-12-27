@@ -7,21 +7,18 @@ exports.createTransaction = async (req, res) => {
   const session = await mongoose.startSession();
   try {
     const { amount, type, meta } = req.body;
-    const actor = req.user; // from JWT
+    const actor = req.user;
 
     if (!actor || !actor.userId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
-
     if (typeof amount !== "number" || amount <= 0) {
-      return res
-        .status(400)
-        .json({ error: "amount must be a positive number (paisa)" });
+      return res.status(400).json({ error: "Amount must be positive" });
     }
     if (!["credit", "debit"].includes(type)) {
       return res
         .status(400)
-        .json({ error: "type must be 'credit' or 'debit'" });
+        .json({ error: "Type must be 'credit' or 'debit'" });
     }
 
     await session.startTransaction();
@@ -39,23 +36,14 @@ exports.createTransaction = async (req, res) => {
     }
 
     const tx = await Transaction.create(
-      [
-        {
-          userId: user.userId,
-          amount,
-          type,
-          status: "pending", // start as pending
-          meta,
-        },
-      ],
+      [{ userId: user.userId, amount, type, status: "pending", meta }],
       { session }
     );
-    const transaction = tx[0];
 
     await session.commitTransaction();
     session.endSession();
 
-    return res.status(201).json(transaction);
+    return res.status(201).json(tx[0]);
   } catch (err) {
     await session.abortTransaction().catch(() => {});
     session.endSession();
@@ -63,7 +51,67 @@ exports.createTransaction = async (req, res) => {
   }
 };
 
-// Admin: approve or reject transaction
+// User requests withdrawal (deduct immediately)
+exports.createWithdrawal = async (req, res) => {
+  const session = await mongoose.startSession();
+  try {
+    const { amount, bankIndex } = req.body;
+    const actor = req.user;
+
+    if (!actor || !actor.userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    if (typeof amount !== "number" || amount <= 0) {
+      return res.status(400).json({ error: "Amount must be positive" });
+    }
+
+    await session.startTransaction();
+
+    const user = await User.findOne({ userId: actor.userId }).session(session);
+    if (!user) {
+      await session.abortTransaction();
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (bankIndex == null || !user.bankAccounts[bankIndex]) {
+      await session.abortTransaction();
+      return res.status(400).json({ error: "Invalid bank account" });
+    }
+
+    if (user.balance < amount) {
+      await session.abortTransaction();
+      return res.status(400).json({ error: "Insufficient balance" });
+    }
+
+    // Deduct immediately
+    user.balance -= amount;
+    await user.save({ session });
+
+    const tx = await Transaction.create(
+      [
+        {
+          userId: user.userId,
+          amount,
+          type: "debit",
+          status: "pending",
+          meta: { bankAccount: user.bankAccounts[bankIndex] },
+        },
+      ],
+      { session }
+    );
+
+    await session.commitTransaction();
+    session.endSession();
+
+    return res.status(201).json(tx[0]);
+  } catch (err) {
+    await session.abortTransaction().catch(() => {});
+    session.endSession();
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// Admin: approve or reject transaction (refund if failed)
 exports.updateTransactionStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -77,51 +125,25 @@ exports.updateTransactionStatus = async (req, res) => {
 
     const tx = await Transaction.findOne({ orderId });
     if (!tx) return res.status(404).json({ error: "Transaction not found" });
-
-    // If already finalized, block re‑approval
     if (tx.status !== "pending") {
       return res.status(400).json({ error: "Transaction already finalized" });
     }
 
-    // Approve: update user balance atomically
+    const user = await User.findOne({ userId: tx.userId });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
     if (status === "completed") {
-      const session = await mongoose.startSession();
-      await session.startTransaction();
-
-      try {
-        const user = await User.findOne({ userId: tx.userId }).session(session);
-        if (!user) {
-          await session.abortTransaction();
-          return res.status(404).json({ error: "User not found" });
-        }
-
-        const delta = tx.type === "credit" ? tx.amount : -tx.amount;
-        if (tx.type === "debit" && user.balance + delta < 0) {
-          await session.abortTransaction();
-          return res
-            .status(400)
-            .json({ error: "Insufficient balance for debit" });
-        }
-
-        user.balance += delta;
-        await user.save({ session });
-
-        tx.status = "completed";
-        await tx.save({ session });
-
-        await session.commitTransaction();
-        session.endSession();
-
-        return res.json(tx);
-      } catch (err) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(500).json({ error: err.message });
-      }
+      tx.status = "completed";
+      await tx.save();
+      return res.json(tx);
     }
 
-    // Reject: just mark as failed, no balance change
     if (status === "failed") {
+      // Refund only if debit
+      if (tx.type === "debit") {
+        user.balance += tx.amount;
+        await user.save();
+      }
       tx.status = "failed";
       await tx.save();
       return res.json(tx);
@@ -135,28 +157,19 @@ exports.updateTransactionStatus = async (req, res) => {
 exports.getUserTransactions = async (req, res) => {
   try {
     const actor = req.user;
-
-    // page query param, default = 1
     const page = parseInt(req.query.page) || 1;
-    const limit = 10; // 10 records per page
+    const limit = 10;
     const skip = (page - 1) * limit;
 
-    // Fetch transactions
     const transactions = await Transaction.find({ userId: actor.userId })
-      .sort({ createdAt: -1 }) // latest first
+      .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
-    // Count total for pagination info
     const total = await Transaction.countDocuments({ userId: actor.userId });
     const totalPages = Math.ceil(total / limit);
 
-    return res.json({
-      page,
-      totalPages,
-      totalRecords: total,
-      transactions,
-    });
+    return res.json({ page, totalPages, totalRecords: total, transactions });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
