@@ -133,6 +133,12 @@ exports.updateTransactionStatus = async (req, res) => {
     if (!user) return res.status(404).json({ error: "User not found" });
 
     if (status === "completed") {
+      // ✅ Update balance for credit deposits
+      if (tx.type === "credit") {
+        user.balance += tx.amount;
+        await user.save();
+      }
+      // ✅ For debit withdrawals, balance was already deducted at request time
       tx.status = "completed";
       await tx.save();
       return res.json(tx);
