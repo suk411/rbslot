@@ -174,3 +174,37 @@ exports.getUserTransactions = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
+
+// Get unseen completed transactions for logged-in user
+exports.getUnseenCompletedTransactions = async (req, res) => {
+  try {
+    const actor = req.user;
+    const tx = await Transaction.find({
+      userId: actor.userId,
+      status: "completed",
+      seenByUser: false,
+    }).sort({ createdAt: -1 });
+
+    return res.json(tx);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// Mark transaction as seen
+exports.markTransactionSeen = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const actor = req.user;
+
+    const tx = await Transaction.findOne({ orderId, userId: actor.userId });
+    if (!tx) return res.status(404).json({ error: "Transaction not found" });
+
+    tx.seenByUser = true;
+    await tx.save();
+
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};

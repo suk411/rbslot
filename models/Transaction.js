@@ -5,7 +5,7 @@ const transactionSchema = new mongoose.Schema(
   {
     orderId: { type: String, unique: true, index: true },
     userId: { type: String, required: true, index: true },
-    amount: { type: Number, required: true }, // paisa (positive for credit, negative for debit)
+    amount: { type: Number, required: true },
     type: {
       type: String,
       enum: ["credit", "debit"],
@@ -19,6 +19,7 @@ const transactionSchema = new mongoose.Schema(
       index: true,
     },
     meta: { type: Object },
+    seenByUser: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now },
   },
   { versionKey: false }
