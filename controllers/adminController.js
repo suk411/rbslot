@@ -1,5 +1,5 @@
 const User = require("../models/User.js");
-const Transaction = require("../models/Transaction.js");
+
 const DeviceLog = require("../models/DeviceLog.js");
 
 // List all users (paginated)
@@ -81,8 +81,6 @@ exports.listDevices = async (req, res) => {
   }
 };
 
-
-
 // Find linked accounts by device logs
 exports.findLinkedAccounts = async (req, res) => {
   try {
@@ -96,22 +94,22 @@ exports.findLinkedAccounts = async (req, res) => {
     }
 
     // Collect identifiers used by this user
-    const deviceIds = userDevices.map(d => d.deviceId).filter(Boolean);
-    const ips = userDevices.map(d => d.ip).filter(Boolean);
-    const adIds = userDevices.map(d => d.adId).filter(Boolean);
+    const deviceIds = userDevices.map((d) => d.deviceId).filter(Boolean);
+    const ips = userDevices.map((d) => d.ip).filter(Boolean);
+    const adIds = userDevices.map((d) => d.adId).filter(Boolean);
 
     // Find other users who share any of these identifiers
     const linkedLogs = await DeviceLog.find({
       $or: [
         { deviceId: { $in: deviceIds } },
         { ip: { $in: ips } },
-        { adId: { $in: adIds } }
+        { adId: { $in: adIds } },
       ],
-      userId: { $ne: userId } // exclude the original user
+      userId: { $ne: userId }, // exclude the original user
     });
 
     // Get distinct userIds
-    const linkedUserIds = [...new Set(linkedLogs.map(d => d.userId))];
+    const linkedUserIds = [...new Set(linkedLogs.map((d) => d.userId))];
 
     // Fetch user details
     const linkedUsers = await User.find({ userId: { $in: linkedUserIds } });

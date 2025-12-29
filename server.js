@@ -5,7 +5,7 @@ const connectDB = require("./config/db.js");
 
 const authRoutes = require("./routes/authRoutes.js");
 const userRoutes = require("./routes/userRoutes.js");
-const transactionRoutes = require("./routes/transactionRoutes.js");
+const depositRoutes = require("./routes/depositRoutes");
 const deviceRoutes = require("./routes/deviceRoutes.js");
 const adminRoutes = require("./routes/adminRoutes.js");
 const app = express();
@@ -25,7 +25,7 @@ app.use(express.json());
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
-app.use("/api/transactions", transactionRoutes);
+app.use("/api/deposit", depositRoutes);
 app.use("/api/devices", deviceRoutes);
 app.use("/api/admin", adminRoutes);
 // 404 fallback
