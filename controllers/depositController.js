@@ -56,6 +56,9 @@ exports.createDepositRequest = async (req, res) => {
         order_id: order.order_id,
         amount: order.amount,
         expiry_seconds: order.expiry_seconds,
+        channel_name: order.channel_name,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
       },
       payment_links: order.payment_links,
     });
@@ -87,6 +90,7 @@ exports.adminFindDeposits = async (req, res) => {
         status: order.status,
         channel_name: order.channel_name || null,
         createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
         gateway_order_no: order.gateway_order_no || null,
       });
     }
@@ -116,6 +120,7 @@ exports.adminFindDeposits = async (req, res) => {
           status: d.status,
           channel_name: d.channel_name || null,
           createdAt: d.createdAt,
+          updatedAt: d.updatedAt,
           gateway_order_no: d.gateway_order_no || null,
         })),
       });
@@ -157,6 +162,7 @@ exports.adminUpdateStatus = async (req, res) => {
       success: true,
       order_id: order.order_id,
       status: order.status,
+      updatedAt: order.updatedAt,
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -194,6 +200,7 @@ exports.getUserDeposits = async (req, res) => {
         status: d.status,
         channel_name: d.channel_name || null,
         createdAt: d.createdAt,
+        updatedAt: d.updatedAt,
       })),
     });
   } catch (err) {
