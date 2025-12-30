@@ -41,12 +41,10 @@ exports.createDepositRequest = async (req, res) => {
       order.status = "FAILED";
       order.note = gateway.msg || "Gateway error";
       await order.save();
-      return res
-        .status(502)
-        .json({
-          error: gateway.msg || "Payment gateway error",
-          code: gateway.code,
-        });
+      return res.status(502).json({
+        error: gateway.msg || "Payment gateway error",
+        code: gateway.code,
+      });
     }
 
     order.gateway_order_no = gateway.data?.orderNo || null;
@@ -157,7 +155,6 @@ exports.adminFindDeposits = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
-
 // Admin: update deposit status
 exports.adminUpdateStatus = async (req, res) => {
   try {
@@ -169,8 +166,19 @@ exports.adminUpdateStatus = async (req, res) => {
     }
 
     const order = await DepositOrder.findOne({ order_id });
-    if (!order)
+    if (!order) {
       return res.status(404).json({ error: "Deposit order not found" });
+    }
+
+    // ✅ If deposit succeeds, credit user balance
+    if (status === "SUCCESS") {
+      const user = await User.findOne({ userId: order.user_id });
+      if (user) {
+        // amount is in rupees, balance stored in paisa
+        user.balance += order.amount * 100;
+        await user.save();
+      }
+    }
 
     order.status = status;
     if (note) order.note = note;
@@ -181,6 +189,44 @@ exports.adminUpdateStatus = async (req, res) => {
       success: true,
       order_id: order.order_id,
       status: order.status,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// User: get own deposits (paginated 10 per page)
+exports.getUserDeposits = async (req, res) => {
+  try {
+    const actor = req.user;
+    if (!actor || !actor.userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const page = parseInt(req.query.page || "1", 10);
+    const limit = 10;
+    const skip = (page - 1) * limit;
+
+    const items = await DepositOrder.find({ user_id: actor.userId })
+      .sort({ created_at: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const total = await DepositOrder.countDocuments({ user_id: actor.userId });
+
+    return res.json({
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      deposits: items.map((d) => ({
+        order_id: d.order_id,
+        amount: d.amount,
+        currency: d.currency,
+        status: d.status,
+        utr: d.utr || null,
+        created_at: d.created_at,
+      })),
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });
