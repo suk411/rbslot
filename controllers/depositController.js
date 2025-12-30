@@ -1,4 +1,3 @@
-// controllers/depositController.js
 const DepositOrder = require("../models/DepositOrder");
 const { createPaymentOrder } = require("../services/paysimply");
 const User = require("../models/User");
@@ -23,6 +22,7 @@ exports.createDepositRequest = async (req, res) => {
       currency: "INR",
       status: "PENDING",
       expiry_seconds: 600,
+      channel_name: "Paysimply", // ✅ system sets channel name
     });
     await order.save();
 
@@ -64,37 +64,6 @@ exports.createDepositRequest = async (req, res) => {
   }
 };
 
-// User submits UTR
-exports.submitUTR = async (req, res) => {
-  try {
-    const actor = req.user;
-    const { order_id, utr } = req.body;
-
-    if (!actor || !actor.userId)
-      return res.status(401).json({ error: "Unauthorized" });
-    if (!order_id || !utr)
-      return res.status(400).json({ error: "order_id and utr are required" });
-    if (!/^\d{12}$/.test(utr))
-      return res.status(400).json({ error: "UTR must be 12 digits" });
-
-    const order = await DepositOrder.findOne({
-      order_id,
-      user_id: actor.userId,
-    });
-    if (!order) return res.status(404).json({ error: "Order not found" });
-    if (order.status !== "PENDING")
-      return res.status(400).json({ error: "Order is not pending" });
-
-    order.utr = utr;
-    order.updated_at = new Date();
-    await order.save();
-
-    return res.json({ success: true, order_id: order.order_id });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-};
-
 // Admin: find deposits by user_id (paginated 25) or order_id (single)
 exports.adminFindDeposits = async (req, res) => {
   try {
@@ -116,8 +85,8 @@ exports.adminFindDeposits = async (req, res) => {
         amount: order.amount,
         currency: order.currency,
         status: order.status,
-        utr: order.utr || null,
-        created_at: order.created_at,
+        channel_name: order.channel_name || null,
+        createdAt: order.createdAt,
         gateway_order_no: order.gateway_order_no || null,
       });
     }
@@ -128,7 +97,7 @@ exports.adminFindDeposits = async (req, res) => {
       const skip = (page - 1) * limit;
 
       const items = await DepositOrder.find({ user_id })
-        .sort({ created_at: -1 })
+        .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit);
 
@@ -145,8 +114,8 @@ exports.adminFindDeposits = async (req, res) => {
           amount: d.amount,
           currency: d.currency,
           status: d.status,
-          utr: d.utr || null,
-          created_at: d.created_at,
+          channel_name: d.channel_name || null,
+          createdAt: d.createdAt,
           gateway_order_no: d.gateway_order_no || null,
         })),
       });
@@ -155,6 +124,7 @@ exports.adminFindDeposits = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
+
 // Admin: update deposit status
 exports.adminUpdateStatus = async (req, res) => {
   try {
@@ -174,15 +144,13 @@ exports.adminUpdateStatus = async (req, res) => {
     if (status === "SUCCESS") {
       const user = await User.findOne({ userId: order.user_id });
       if (user) {
-        // amount is in rupees, balance stored in paisa
-        user.balance += order.amount * 100;
+        user.balance += order.amount * 100; // rupees → paisa
         await user.save();
       }
     }
 
     order.status = status;
     if (note) order.note = note;
-    order.updated_at = new Date();
     await order.save();
 
     return res.json({
@@ -208,7 +176,7 @@ exports.getUserDeposits = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const items = await DepositOrder.find({ user_id: actor.userId })
-      .sort({ created_at: -1 })
+      .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
 
@@ -224,8 +192,8 @@ exports.getUserDeposits = async (req, res) => {
         amount: d.amount,
         currency: d.currency,
         status: d.status,
-        utr: d.utr || null,
-        created_at: d.created_at,
+        channel_name: d.channel_name || null,
+        createdAt: d.createdAt,
       })),
     });
   } catch (err) {

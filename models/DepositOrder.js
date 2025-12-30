@@ -1,4 +1,3 @@
-// models/DepositOrder.js
 const mongoose = require("mongoose");
 const Counter = require("./Counter");
 
@@ -17,12 +16,16 @@ const depositOrderSchema = new mongoose.Schema(
     gateway_order_no: { type: String },
     payment_links: { type: Object, default: {} },
     expiry_seconds: { type: Number, default: 600 },
-    utr: { type: String },
-    created_at: { type: Date, default: Date.now },
-    updated_at: { type: Date, default: Date.now },
+
+    // ✅ system-set channel name
+    channel_name: { type: String, default: "Paysimply" },
+
     note: { type: String },
   },
-  { versionKey: false }
+  {
+    versionKey: false,
+    timestamps: true, // ✅ adds createdAt and updatedAt automatically
+  }
 );
 
 depositOrderSchema.pre("save", async function () {
@@ -39,7 +42,6 @@ depositOrderSchema.pre("save", async function () {
     const dd = String(now.getDate()).padStart(2, "0");
     this.order_id = `DP${yyyy}${mm}${dd}${seqStr}`;
   }
-  this.updated_at = new Date();
 });
 
 module.exports = mongoose.model("DepositOrder", depositOrderSchema);
